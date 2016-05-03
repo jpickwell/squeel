@@ -4,7 +4,6 @@ module Squeel
   module Adapters
     module ActiveRecord
       module RelationExtensions
-
         attr_writer :join_dependency
         private :join_dependency=
 
@@ -38,8 +37,8 @@ module Squeel
         # Whatever code you see here currently is my current best attempt at
         # coexisting peacefully with said nemesis.
         def merge(r, equalities_resolved = false)
-          if ::ActiveRecord::Relation === r && !equalities_resolved
-            if self.table_name != r.table_name
+          if r.is_a?(::ActiveRecord::Relation) && !equalities_resolved
+            if table_name != r.table_name
               super(r.visited)
             else
               merge_resolving_duplicate_squeel_equalities(r)
@@ -55,10 +54,10 @@ module Squeel
 
         def visit!
           self.where_values = where_visit((where_values - ['']).uniq)
-          self.having_values = having_visit(having_values.uniq.reject{|h| h.blank?})
+          self.having_values = having_visit(having_values.uniq.reject(&:blank?))
           # FIXME: AR barfs on Arel attributes in group_values. Workaround?
-          # self.group_values = group_visit(group_values.uniq.reject{|g| g.blank?})
-          self.order_values = order_visit(order_values.uniq.reject{|o| o.blank?})
+          # self.group_values = group_visit(group_values.uniq.reject(&:blank?))
+          self.order_values = order_visit(order_values.uniq.reject(&:blank?))
           self.select_values = select_visit(select_values.uniq)
 
           self
@@ -68,7 +67,7 @@ module Squeel
         # but not attributes
         def attrs_to_orderings(order)
           order.map do |o|
-            Arel::Attribute === o ? o.asc : o
+            o.is_a?(Arel::Attribute) ? o.asc : o
           end
         end
 
@@ -89,13 +88,13 @@ module Squeel
             select = visited_values.first
 
             str_select = case select
-            when String
-              select
-            when Symbol
-              select.to_s
-            else
-              select.to_sql if select.respond_to?(:to_sql)
-            end
+                         when String
+                           select
+                         when Symbol
+                           select.to_s
+                         else
+                           select.to_sql if select.respond_to?(:to_sql)
+                         end
 
             str_select if str_select && str_select !~ /[,*]/
           else
@@ -117,17 +116,15 @@ module Squeel
             when Nodes::SubqueryJoin
               :subquery_join
             else
-              raise 'unknown class: %s' % join.class.name
+              raise format('unknown class: %s', join.class.name)
             end
           end
 
-          association_joins         = buckets[:association_join] || []
+          association_joins = buckets[:association_join] || []
           stashed_association_joins = buckets[:stashed_join] || []
-          join_nodes                = (buckets[:join_node] || []).uniq
-          subquery_joins            = (buckets[:subquery_join] || []).uniq
-          string_joins              = (buckets[:string_join] || []).map { |x|
-            x.strip
-          }.uniq
+          join_nodes = (buckets[:join_node] || []).uniq
+          subquery_joins = (buckets[:subquery_join] || []).uniq
+          string_joins = (buckets[:string_join] || []).map(&:strip).uniq
 
           join_list = join_nodes + custom_join_ast(manager, string_joins)
 
@@ -140,7 +137,9 @@ module Squeel
 
           join_dependency.graft(*stashed_association_joins)
 
-          @implicit_readonly = true unless association_joins.empty? && stashed_association_joins.empty?
+          unless association_joins.empty? && stashed_association_joins.empty?
+            @implicit_readonly = true
+          end
 
           join_dependency.join_associations.each do |association|
             association.join_to(manager)
@@ -151,12 +150,13 @@ module Squeel
 
           manager
         end
+
         # For 4.0 adapters
-        alias :build_joins :build_join_dependency
+        alias build_joins build_join_dependency
 
         def includes(*args)
           if block_given? && args.empty?
-            super(DSL.eval &Proc.new)
+            super(DSL.eval(&Proc.new))
           else
             super
           end
@@ -164,7 +164,7 @@ module Squeel
 
         def preload(*args)
           if block_given? && args.empty?
-            super(DSL.eval &Proc.new)
+            super(DSL.eval(&Proc.new))
           else
             super
           end
@@ -172,19 +172,19 @@ module Squeel
 
         def eager_load(*args)
           if block_given? && args.empty?
-            super(DSL.eval &Proc.new)
+            super(DSL.eval(&Proc.new))
           else
             super
           end
         end
 
         def select(value = Proc.new)
-          if block_given? && Proc === value
+          if block_given? && value.is_a?(Proc)
             if value.arity > 0 || (Squeel.sane_arity? && value.arity < 0)
-              to_a.select {|*block_args| value.call(*block_args)}
+              to_a.select { |*block_args| value.call(*block_args) }
             else
               relation = clone
-              relation.select_values += Array.wrap(DSL.eval &value)
+              relation.select_values += Array.wrap(DSL.eval(&value))
               relation
             end
           else
@@ -194,7 +194,7 @@ module Squeel
 
         def group(*args)
           if block_given? && args.empty?
-            super(DSL.eval &Proc.new)
+            super(DSL.eval(&Proc.new))
           else
             super
           end
@@ -202,7 +202,7 @@ module Squeel
 
         def order(*args)
           if block_given? && args.empty?
-            super(DSL.eval &Proc.new)
+            super(DSL.eval(&Proc.new))
           else
             super
           end
@@ -210,7 +210,7 @@ module Squeel
 
         def reorder(*args)
           if block_given? && args.empty?
-            super(DSL.eval &Proc.new)
+            super(DSL.eval(&Proc.new))
           else
             super
           end
@@ -218,15 +218,15 @@ module Squeel
 
         def joins(*args)
           if block_given? && args.empty?
-            super(DSL.eval &Proc.new)
+            super(DSL.eval(&Proc.new))
           else
             super
           end
         end
 
         def where(opts = Proc.new, *rest)
-          if block_given? && Proc === opts
-            super(DSL.eval &opts)
+          if block_given? && opts.is_a?(Proc)
+            super(DSL.eval(&opts))
           else
             super
           end
@@ -234,7 +234,7 @@ module Squeel
 
         def having(*args)
           if block_given? && args.empty?
-            super(DSL.eval &Proc.new)
+            super(DSL.eval(&Proc.new))
           else
             super
           end
@@ -242,7 +242,7 @@ module Squeel
 
         def from(*args)
           if block_given? && args.empty?
-            super(DSL.eval &Proc.new)
+            super(DSL.eval(&Proc.new))
           else
             super
           end
@@ -252,10 +252,10 @@ module Squeel
           case opts
           when String, Array
             super
-          else  # Let's prevent PredicateBuilder from doing its thing
+          else # Let's prevent PredicateBuilder from doing its thing
             [opts, *other].map do |arg|
               case arg
-              when Array  # Just in case there's an array in there somewhere
+              when Array # Just in case there's an array in there somewhere
                 @klass.send(:sanitize_sql, arg)
               when Hash
                 @klass.send(:expand_hash_conditions_for_aggregates, arg)
@@ -270,36 +270,38 @@ module Squeel
           wheres = Array(wheres)
           binaries = wheres.grep(Arel::Nodes::Binary)
 
-          groups = binaries.group_by {|b| [b.class, b.left]}
+          groups = binaries.group_by { |b| [b.class, b.left] }
 
-          arel.where(Arel::Nodes::And.new(groups.map{|_, bins| bins}.flatten)) if groups.any?
+          if groups.any?
+            arel.where(
+              Arel::Nodes::And.new(groups.map { |_, bins| bins }.flatten)
+            )
+          end
 
           (wheres - binaries).each do |where|
-            where = Arel.sql(where) if String === where
+            where = Arel.sql(where) if where.is_a?(String)
             arel.where(Arel::Nodes::Grouping.new(where))
           end
         end
 
         def find_equality_predicates(nodes, relation_table_name = table_name)
-          nodes.map { |node|
+          nodes.map do |node|
             case node
             when Arel::Nodes::Equality
               if node.left.respond_to?(:relation) &&
-                node.left.relation.name == relation_table_name
+                 node.left.relation.name == relation_table_name
                 node
               end
             when Arel::Nodes::Grouping
               find_equality_predicates([node.expr])
             when Arel::Nodes::And
               find_equality_predicates(node.children)
-            else
-              nil
             end
-          }.compact.flatten
+          end.compact.flatten
         end
 
         def flatten_nodes(nodes)
-          nodes.map { |node|
+          nodes.map do |node|
             case node
             when Array
               flatten_nodes(node)
@@ -310,7 +312,7 @@ module Squeel
             else
               node
             end
-          }.flatten
+          end.flatten
         end
 
         def merge_resolving_duplicate_squeel_equalities(r)
@@ -319,7 +321,7 @@ module Squeel
           left.where_values = flatten_nodes(left.where_values)
           right.where_values = flatten_nodes(right.where_values)
           right_equalities = right.where_values.select do |obj|
-            Nodes::Predicate === obj && obj.method_name == :eq
+            obj.is_a?(Nodes::Predicate) && obj.method_name == :eq
           end
           right.where_values -= right_equalities
           left.where_values = resolve_duplicate_squeel_equalities(
@@ -330,14 +332,14 @@ module Squeel
 
         def resolve_duplicate_squeel_equalities(wheres)
           seen = {}
-          wheres.reverse.reject { |n|
+          wheres.reverse.reject do |n|
             nuke = false
-            if Nodes::Predicate === n && n.method_name == :eq
-              nuke       = seen[n.expr]
+            if n.is_a?(Nodes::Predicate) && n.method_name == :eq
+              nuke = seen[n.expr]
               seen[n.expr] = true
             end
             nuke
-          }.reverse
+          end.reverse
         end
 
         # Simulate the logic that occurs in #to_a
@@ -397,13 +399,18 @@ module Squeel
         # And and Grouping nodes, which are equivalent to seeing top-level
         # Equality nodes in stock AR terms.
         def where_values_hash_with_squeel(relation_table_name = table_name)
-          equalities = find_equality_predicates(where_visit(with_default_scope.where_values), relation_table_name)
-          binds = Hash[bind_values.find_all(&:first).map { |column, v| [column.name, v] }]
+          equalities = find_equality_predicates(
+            where_visit(with_default_scope.where_values),
+            relation_table_name
+          )
+          binds = Hash[bind_values.find_all(&:first).map do |column, v|
+            [column.name, v]
+          end]
 
-          Hash[equalities.map { |where|
+          Hash[equalities.map do |where|
             name = where.left.name
             [name, binds.fetch(name.to_s) { where.right }]
-          }]
+          end]
         end
 
         def build_join_from_subquery(subquery_joins)
@@ -420,24 +427,37 @@ module Squeel
         def preprocess_attrs_with_ar(attributes)
           attributes.map do |key, value|
             case key
-              when Squeel::Nodes::Node
-                {key => value}
-              when Symbol
-                if value.is_a?(Hash)
-                  {key => value}
-                else
-                  ::ActiveRecord::PredicateBuilder.build_from_hash(klass, {key => value}, table)
-                end
+            when Squeel::Nodes::Node
+              { key => value }
+            when Symbol
+              if value.is_a?(Hash)
+                { key => value }
               else
-                ::ActiveRecord::PredicateBuilder.build_from_hash(klass, {key => value}, table)
+                ::ActiveRecord::PredicateBuilder.build_from_hash(
+                  klass, { key => value }, table
+                )
               end
+            else
+              ::ActiveRecord::PredicateBuilder.build_from_hash(
+                klass, { key => value }, table
+              )
+            end
           end
         end
 
         def execute_grouped_calculation(operation, column_name, distinct)
           arel = Arel::SelectManager.new(table.engine, table)
-          build_join_dependency(arel, joins_values.flatten) unless joins_values.empty?
-          self.group_values = group_visit(group_values.uniq.reject{|g| g.blank?}) unless group_values.empty?
+
+          unless joins_values.empty?
+            build_join_dependency(arel, joins_values.flatten)
+          end
+
+          unless group_values.empty?
+            self.group_values = group_visit(
+              group_values.uniq.reject(&:blank?)
+            )
+          end
+
           super
         end
       end

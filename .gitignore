@@ -6,3 +6,4 @@ pkg/*
 .ruby-version
 .ruby-gemset
 script
+.byebug_history
