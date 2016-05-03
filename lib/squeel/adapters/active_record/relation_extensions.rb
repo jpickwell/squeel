@@ -178,8 +178,8 @@ module Squeel
           end
         end
 
-        def select(value = Proc.new)
-          if block_given? && value.is_a?(Proc)
+        def select(*fields)
+          if block_given? && (value = Proc.new).is_a?(Proc)
             if value.arity > 0 || (Squeel.sane_arity? && value.arity < 0)
               to_a.select { |*block_args| value.call(*block_args) }
             else
