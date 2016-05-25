@@ -446,6 +446,8 @@ module Squeel
         end
 
         def execute_grouped_calculation(operation, column_name, distinct)
+          reset
+
           arel = Arel::SelectManager.new(table.engine, table)
 
           unless joins_values.empty?
